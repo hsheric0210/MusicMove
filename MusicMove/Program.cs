@@ -1,11 +1,24 @@
 ﻿using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
+using System.Data;
+using System.Reflection;
 using System.Runtime;
+using System.Text;
 
 namespace MusicMove
 {
     internal static class Program
     {
+        private enum OperatingMode
+        {
+            Move,
+            Parse_CoverArt,
+            Move_Instrumental,
+            Rename_Instrumental,
+            Name_Normalize,
+            Import_Tags
+        }
+
         static void Main(string[] args)
         {
             Log.Logger = new LoggerConfiguration()
@@ -15,10 +28,43 @@ namespace MusicMove
 
             try
             {
+                var input = new List<string>(args);
+                if (args.Length == 1 && args[0].StartsWith('@')) // input file support
+                {
+                    input = File.ReadAllLines(args[0][1..].Trim('"')).Select(i => i.Trim().Trim('"')).ToList();
+                }
+
+                var op = OperatingMode.Move;
+                if (Environment.GetEnvironmentVariable("MM_COVER")?.Equals("1") ?? false)
+                {
+                    Log.Information("Parse_CoverArt mode.");
+                    op = OperatingMode.Parse_CoverArt;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_INSTRU")?.Equals("1") ?? false)
+                {
+                    Log.Information("Move_Instrumental mode.");
+                    op = OperatingMode.Move_Instrumental;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_RINSTRU")?.Equals("1") ?? false)
+                {
+                    Log.Information("Rename_Instrumental mode.");
+                    op = OperatingMode.Rename_Instrumental;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_NAME_NORMALIZE")?.Equals("1") ?? false)
+                {
+                    Log.Information("Name_Normalize mode.");
+                    op = OperatingMode.Name_Normalize;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_TAGS")?.Equals("1") ?? false)
+                {
+                    Log.Information("Import_Tags mode.");
+                    op = OperatingMode.Import_Tags;
+                }
+
                 var rootDir = Environment.CurrentDirectory; // If you will execute this by Drag-and-Drop, cwd will be set to the specified directory.
 
-                var targets = new List<string>(args);
-                foreach (var target in args)
+                var targets = new List<string>(input);
+                foreach (var target in input)
                 {
                     try
                     {
@@ -29,6 +75,9 @@ namespace MusicMove
                         targets.AddRange(dirInfo.EnumerateFilesRecursive("*.mp3"));
                         targets.AddRange(dirInfo.EnumerateFilesRecursive("*.wav"));
                         targets.AddRange(dirInfo.EnumerateFilesRecursive("*.ogg"));
+                        targets.AddRange(dirInfo.EnumerateFilesRecursive("*.jpg"));
+                        targets.AddRange(dirInfo.EnumerateFilesRecursive("*.png"));
+                        targets.AddRange(dirInfo.EnumerateFilesRecursive("*.webp"));
                     }
                     catch (Exception ex)
                     {
@@ -46,18 +95,149 @@ namespace MusicMove
                             Log.Warning("File not exists: {file}", file);
                             continue;
                         }
+                        Log.Information("Execution for file {file}", file);
 
                         var music = new Music(file);
 
-                        var dest = music.GetDestination(rootDir);
-                        var destDir = Path.GetDirectoryName(dest);
-                        if (string.IsNullOrEmpty(destDir))
-                            throw new IOException("Invalid destination parent directory of the file: " + file);
-                        var destDirInfo = new DirectoryInfo(destDir);
-                        if (!destDirInfo.Exists)
-                            destDirInfo.Create();
+                        switch (op)
+                        {
+                            case OperatingMode.Move:
+                            {
+                                var dest = music.GetDestination(rootDir);
+                                var destDir = Path.GetDirectoryName(dest);
+                                if (string.IsNullOrEmpty(destDir))
+                                    throw new IOException("Invalid destination parent directory of the file: " + file);
+                                var destDirInfo = new DirectoryInfo(destDir);
+                                if (!destDirInfo.Exists)
+                                    destDirInfo.Create();
 
-                        info.MoveTo(dest);
+                                info.MoveTo(dest);
+                                Log.Information("Move {src} -> {dst}", info.FullName, dest);
+                                break;
+                            }
+                            case OperatingMode.Parse_CoverArt:
+                            {
+                                music.GetCoverImagePath(".jpg");
+                                music.GetCoverImagePath(".png");
+                                music.GetCoverImagePath(".webp");
+                                break;
+                            }
+                            case OperatingMode.Move_Instrumental:
+                            {
+                                var instrumental = new FileInfo(file);
+                                var parent = Path.GetDirectoryName(file);
+                                if (parent == null)
+                                    throw new IOException("Parent directory empty: " + file);
+                                var regularFn = Path.Combine(parent, Path.GetFileNameWithoutExtension(file)[..^2] + Path.GetExtension(file));
+                                Log.Information("Regular Filename is {file}", regularFn);
+                                var regular = new FileInfo(regularFn);
+                                var dest = Path.Combine(rootDir, "RegularAndInstrumental");
+                                if (!Directory.Exists(dest))
+                                    Directory.CreateDirectory(dest);
+                                if (regular.Exists)
+                                {
+                                    var idest = Path.Combine(dest, instrumental.Name);
+                                    var rdest = Path.Combine(dest, regular.Name);
+                                    instrumental.MoveTo(idest);
+                                    regular.MoveTo(rdest);
+                                    Log.Information("Move instrumental {src} -> {dst}", instrumental.FullName, idest);
+                                    Log.Information("Move regular {src} -> {dst}", regular.FullName, rdest);
+                                }
+                                break;
+                            }
+                            case OperatingMode.Rename_Instrumental:
+                            {
+                                var isInstrumental = false;
+                                var parent = Path.GetDirectoryName(file);
+                                if (parent == null)
+                                    throw new IOException("Parent directory empty: " + file);
+                                using (var tFile = TagLib.File.Create(file))
+                                {
+                                    if (tFile is null or (default(TagLib.File)))
+                                        throw new FormatException("File " + file + " doesn't have any tag");
+                                    var tag = tFile.GetTag(TagLib.TagTypes.Id3v2);
+                                    if (tag == null)
+                                        throw new FormatException("File " + file + " doesn't have ID3v2 tag");
+                                    isInstrumental = tag.Title.Contains("Instru", StringComparison.OrdinalIgnoreCase);
+                                }
+                                if (isInstrumental)
+                                {
+                                    var ren_to = Path.Combine(parent, Path.GetFileNameWithoutExtension(file) + ".Instrumental" + Path.GetExtension(file));
+                                    File.Move(file, ren_to);
+                                    Log.Information("Rename instrumental {src} -> {dst}", file, ren_to);
+                                }
+                                break;
+                            }
+                            case OperatingMode.Name_Normalize:
+                            {
+                                var parent = Path.GetDirectoryName(file);
+                                if (parent == null)
+                                    throw new IOException("Parent directory empty: " + file);
+                                var normalized = Music.GetNormalizedFileName(Music.ParseFileName(Path.GetFileNameWithoutExtension(file)));
+                                var dest = Path.Combine(parent, normalized + Path.GetExtension(file));
+                                if (!Path.GetFullPath(file).Equals(dest))
+                                {
+                                    File.Move(file, dest);
+                                    Log.Information("Normalized song file name: {src} -> {dst}", file, dest);
+                                }
+                                break;
+                            }
+                            case OperatingMode.Import_Tags:
+                            {
+                                var fName = Path.GetFileNameWithoutExtension(file);
+                                var nInfo = Music.ParseFileName(fName);
+                                var isNCS = fName.Contains("[NCS Release]");
+                                using (var tFile = TagLib.File.Create(file))
+                                {
+                                    if (tFile is null or (default(TagLib.File)))
+                                        throw new FormatException("File " + file + " cannot be opened.");
+
+                                    // Drop unnecessary ID3v1 tags
+                                    try
+                                    {
+                                        tFile.RemoveTags(TagLib.TagTypes.Id3v1);
+                                    }
+                                    catch { }
+
+                                    var tag = tFile.GetTag(TagLib.TagTypes.Id3v2, true);
+                                    if (tag == null)
+                                        throw new FormatException("File " + file + " doesn't support ID3v2 tag");
+
+                                    var composerList = nInfo.Artists.Concat(nInfo.Featuring).ToArray();
+                                    tag.Performers = composerList;
+                                    Log.Information("File {file} set performers to {performers}", file, tag.JoinedPerformers);
+
+                                    if (tag.Composers == null || tag.Composers.Length == 0) // Do not overwrite composers.
+                                    {
+                                        tag.Composers = composerList;
+                                        Log.Information("File {file} set composers to {composers}", file, tag.JoinedComposers);
+                                    }
+
+                                    if (isNCS && string.IsNullOrWhiteSpace(tag.Publisher)) // Do not overwrite publisher.
+                                    {
+                                        tag.Publisher = "NoCopyrightSounds";
+                                        Log.Information("File {file} set publisher to {publisher}", file, tag.Publisher);
+                                    }
+
+                                    if (isNCS && string.IsNullOrWhiteSpace(tag.Copyright)) // Do not overwrite publisher.
+                                    {
+                                        tag.Copyright = "NoCopyrightSounds";
+                                        Log.Information("File {file} set copyright to {copyright}", file, tag.Copyright);
+                                    }
+
+                                    var titleBuilder = new StringBuilder();
+                                    titleBuilder.Append(nInfo.SongName);
+                                    if (!string.IsNullOrWhiteSpace(nInfo.RemixTag))
+                                        titleBuilder.Append(' ').Append(nInfo.RemixTag);
+                                    if (!string.IsNullOrWhiteSpace(nInfo.ReleaseTag))
+                                        titleBuilder.Append(' ').Append(nInfo.ReleaseTag);
+                                    tag.Title = titleBuilder.ToString();
+                                    Log.Information("File {file} set title to {title}", file, tag.Title);
+                                    tFile.Save();
+                                }
+                                break;
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
