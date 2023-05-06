@@ -173,10 +173,21 @@ namespace MusicMove
                                 var parent = Path.GetDirectoryName(file);
                                 if (parent == null)
                                     throw new IOException("Parent directory empty: " + file);
-                                var normalized = Music.GetNormalizedFileName(Music.ParseFileName(Path.GetFileNameWithoutExtension(file)));
+                                var normalized = SongFileName.GetNormalizedFileName(SongFileName.ParseFileName(Path.GetFileNameWithoutExtension(file)));
                                 var dest = Path.Combine(parent, normalized + Path.GetExtension(file));
-                                if (!Path.GetFullPath(file).Equals(dest))
+                                if (!Path.GetFileName(file).Equals(Path.GetFileName(dest)))
                                 {
+                                    if (File.Exists(dest))
+                                    {
+                                        var dir = new DirectoryInfo(Path.Combine(parent, "_duplicated"));
+                                        if (!dir.Exists)
+                                            dir.Create();
+                                        var dupFile = Path.Combine(parent, "_duplicated", Path.GetFileName(file));
+                                        File.Move(file, dupFile);
+                                        Log.Warning("Destination file already exists: {src} -> {dst}. The file is moved to {dupFile}", file, dest, dupFile);
+                                        break;
+                                    }
+
                                     File.Move(file, dest);
                                     Log.Information("Normalized song file name: {src} -> {dst}", file, dest);
                                 }
@@ -185,7 +196,7 @@ namespace MusicMove
                             case OperatingMode.Import_Tags:
                             {
                                 var fName = Path.GetFileNameWithoutExtension(file);
-                                var nInfo = Music.ParseFileName(fName);
+                                var nInfo = SongFileName.ParseFileName(fName);
                                 var isNCS = fName.Contains("[NCS Release]");
                                 using (var tFile = TagLib.File.Create(file))
                                 {
