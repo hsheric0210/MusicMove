@@ -1,9 +1,5 @@
-﻿using CsvHelper;
-using CsvHelper.Configuration.Attributes;
+﻿using CsvHelper.Configuration.Attributes;
 using Serilog;
-using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.Text;
 using static MusicMove.Album;
 
 namespace MusicMove

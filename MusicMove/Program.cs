@@ -1,8 +1,6 @@
 ﻿using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
 using System.Data;
-using System.Reflection;
-using System.Runtime;
 using System.Text;
 
 namespace MusicMove
