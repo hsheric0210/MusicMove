@@ -6,25 +6,14 @@ namespace MusicMove
 {
     public static class SongFileName
     {
-        private static readonly string[] tokenDelimiters = new string[] { ", ", " & ", " X ", " x " };
-        private static Dictionary<string, string> ArtistMap = new()
+        public sealed record FileNameInfo(string[] Artists, string SongName, string[] Featuring, string RemixTag, string ReleaseTag)
         {
-            ["T & Sugah"] = "__t_and_sugah__",
-            ["Zeus X Crona"] = "__zeus_x_crona__",
-            ["Raven & Kreyn"] = "__raven_and_kreyn__",
-        };
+            public bool Equals(FileNameInfo? other) => other != null && Artists.SequenceEqual(other.Artists) && SongName.Equals(other.SongName);
 
-        private static Dictionary<string, string> ArtistReverseMap = ArtistMap.ToDictionary((i) => i.Value, (i) => i.Key);
+            public override string ToString() => GetNormalizedFileName(this);
 
-        private static string EncodeSpecialArtists(string artistsPart)
-        {
-            var artists = artistsPart;
-            foreach (var entry in ArtistMap)
-                artists = artists.Replace(entry.Key, entry.Value, StringComparison.OrdinalIgnoreCase);
-            return artists;
+            public override int GetHashCode() => throw new NotImplementedException();
         }
-
-        private static string DecodeSpecialArtists(string artist) => ArtistReverseMap.TryGetValue(artist, out var decodedName) ? decodedName : artist;
 
         public static FileNameInfo ParseFileName(string fileName)
         {
@@ -42,7 +31,7 @@ namespace MusicMove
 
             if (frontFeaturingBegin > 0)
                 artistsPart = artistsPart[..(frontFeaturingBegin - 1)];
-            var artists = EncodeSpecialArtists(artistsPart).Split(tokenDelimiters, StringSplitOptions.RemoveEmptyEntries).Select(a => DecodeSpecialArtists(a));
+            var artists = ArtistSplitter.SplitArtists(artistsPart);
             Log.Verbose("Artists: {artists}", string.Join("; ", artists));
 
             var namePart = separated[1];
@@ -113,7 +102,7 @@ namespace MusicMove
                 endIndex = namePart.Length;
             if (finIndex == -1 || finIndex < endIndex + 1)
                 finIndex = endIndex + 1;
-            return namePart[startIndex..endIndex].Split(tokenDelimiters, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return ArtistSplitter.SplitArtists(namePart[startIndex..endIndex]).ToArray();
         }
 
         public static string GetNormalizedFileName(FileNameInfo info)

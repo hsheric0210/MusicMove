@@ -14,13 +14,6 @@ namespace MusicMove
             Log.Verbose("Music file accepted: {path} -> {fullPath}", filePath, this.filePath);
         }
 
-        public sealed record FileNameInfo(string[] Artists, string SongName, string[] Featuring, string RemixTag, string ReleaseTag)
-        {
-            public bool Equals(FileNameInfo? other) => other != null && Artists.SequenceEqual(other.Artists) && SongName.Equals(other.SongName);
-
-            public override int GetHashCode() => throw new NotImplementedException();
-        }
-
         public string GetDestination(string rootDir)
         {
             var info = SongFileName.ParseFileName(Path.GetFileNameWithoutExtension(filePath));

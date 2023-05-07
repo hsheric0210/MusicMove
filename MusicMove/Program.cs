@@ -16,7 +16,9 @@ namespace MusicMove
             Move_Instrumental,
             Rename_Instrumental,
             Name_Normalize,
-            Import_Tags
+            Import_Tags,
+            Import_Album_Mapping,
+            Import_Dump
         }
 
         static void Main(string[] args)
@@ -28,6 +30,9 @@ namespace MusicMove
 
             try
             {
+                TagLib.Id3v2.Tag.DefaultVersion = 4;
+                TagLib.Id3v2.Tag.ForceDefaultVersion = true;
+
                 var input = new List<string>(args);
                 if (args.Length == 1 && args[0].StartsWith('@')) // input file support
                 {
@@ -35,6 +40,8 @@ namespace MusicMove
                 }
 
                 var op = OperatingMode.Move;
+                AlbumMapping? amap = null;
+                InfoCsvDump? dmp = null;
                 if (Environment.GetEnvironmentVariable("MM_COVER")?.Equals("1") ?? false)
                 {
                     Log.Information("Parse_CoverArt mode.");
@@ -59,6 +66,18 @@ namespace MusicMove
                 {
                     Log.Information("Import_Tags mode.");
                     op = OperatingMode.Import_Tags;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_ALBUM_MAPPING") != null)
+                {
+                    Log.Information("Import_Album_Mapping mode.");
+                    op = OperatingMode.Import_Album_Mapping;
+                    amap = new AlbumMapping(Environment.GetEnvironmentVariable("MM_ALBUM_MAPPING"));
+                }
+                else if (Environment.GetEnvironmentVariable("MM_DUMP") != null)
+                {
+                    Log.Information("Import_Dump mode.");
+                    op = OperatingMode.Import_Dump;
+                    dmp = new InfoCsvDump(Environment.GetEnvironmentVariable("MM_DUMP"));
                 }
 
                 var rootDir = Environment.CurrentDirectory; // If you will execute this by Drag-and-Drop, cwd will be set to the specified directory.
@@ -95,7 +114,7 @@ namespace MusicMove
                             Log.Warning("File not exists: {file}", file);
                             continue;
                         }
-                        Log.Information("Execution for file {file}", file);
+                        Log.Verbose("Execution for file {file}", file);
 
                         var music = new Music(file);
 
@@ -246,6 +265,16 @@ namespace MusicMove
                                     Log.Information("File {file} set title to {title}", file, tag.Title);
                                     tFile.Save();
                                 }
+                                break;
+                            }
+                            case OperatingMode.Import_Album_Mapping:
+                            {
+                                amap.UpdateTags(file);
+                                break;
+                            }
+                            case OperatingMode.Import_Dump:
+                            {
+                                dmp.UpdateTags(file);
                                 break;
                             }
                         }
