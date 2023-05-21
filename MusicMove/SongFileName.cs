@@ -14,31 +14,32 @@ namespace MusicMove
             public override int GetHashCode() => throw new NotImplementedException();
         }
 
-        public static FileNameInfo ParseFileName(string fileName)
+        public static FileNameInfo ParseFileName(string fileName, bool s3rl = false)
         {
             var separated = fileName.Split(" - ", 2, StringSplitOptions.RemoveEmptyEntries);
             if (separated.Length == 1)
                 throw new FormatException("Artist-SongName separator not found: " + fileName);
 
             var featuring = new List<string>();
-            var artistsPart = separated[0];
+            var artistsPart = separated[s3rl ? 1 : 0];
             int frontFeaturingBegin = -1, frontFeaturingEnd = -1;
-            if (artistsPart.IndexOf("feat.") != 0)
-                featuring.AddRange(ParseFeaturing(artistsPart, "feat.", ref frontFeaturingBegin, ref frontFeaturingEnd));
-            if (artistsPart.IndexOf("ft.") != 0)
-                featuring.AddRange(ParseFeaturing(artistsPart, "ft.", ref frontFeaturingBegin, ref frontFeaturingEnd));
+            var featuringTags = s3rl ? new string[] { "feat", "ft" } : new string[] { "feat.", "ft." };
+            if (artistsPart.IndexOf(featuringTags[0]) != 0)
+                featuring.AddRange(ParseFeaturing(artistsPart, featuringTags[0], ref frontFeaturingBegin, ref frontFeaturingEnd));
+            if (artistsPart.IndexOf(featuringTags[1]) != 0)
+                featuring.AddRange(ParseFeaturing(artistsPart, featuringTags[1], ref frontFeaturingBegin, ref frontFeaturingEnd));
 
             if (frontFeaturingBegin > 0)
                 artistsPart = artistsPart[..(frontFeaturingBegin - 1)];
             var artists = ArtistSplitter.SplitArtists(artistsPart);
             Log.Verbose("Artists: {artists}", string.Join("; ", artists));
 
-            var namePart = separated[1];
+            var namePart = separated[s3rl ? 0 : 1];
             Log.Verbose("Name: {name}", namePart);
 
             int backFeaturingBegin = -1, backFeaturingEnd = 0;
-            featuring.AddRange(ParseFeaturing(namePart, "feat.", ref backFeaturingBegin, ref backFeaturingEnd));
-            featuring.AddRange(ParseFeaturing(namePart, "ft.", ref backFeaturingBegin, ref backFeaturingEnd));
+            featuring.AddRange(ParseFeaturing(namePart, featuringTags[0], ref backFeaturingBegin, ref backFeaturingEnd));
+            featuring.AddRange(ParseFeaturing(namePart, featuringTags[1], ref backFeaturingBegin, ref backFeaturingEnd));
 
             if (backFeaturingEnd == -1) // if there're no featuring tag, search from the scratch.
                 backFeaturingEnd = 0;

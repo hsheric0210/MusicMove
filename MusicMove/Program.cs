@@ -13,6 +13,7 @@ namespace MusicMove
             Parse_CoverArt,
             Move_Instrumental,
             Rename_Instrumental,
+            S3RL_Name_Normalize,
             Name_Normalize,
             Import_Tags,
             Import_Album_Mapping,
@@ -59,6 +60,11 @@ namespace MusicMove
                 {
                     Log.Information("Name_Normalize mode.");
                     op = OperatingMode.Name_Normalize;
+                }
+                else if (Environment.GetEnvironmentVariable("MM_NAME_NORMALIZE_S3RL")?.Equals("1") ?? false)
+                {
+                    Log.Information("S3RL_Name_Normalize mode.");
+                    op = OperatingMode.S3RL_Name_Normalize;
                 }
                 else if (Environment.GetEnvironmentVariable("MM_TAGS")?.Equals("1") ?? false)
                 {
@@ -191,6 +197,31 @@ namespace MusicMove
                                 if (parent == null)
                                     throw new IOException("Parent directory empty: " + file);
                                 var normalized = SongFileName.GetNormalizedFileName(SongFileName.ParseFileName(Path.GetFileNameWithoutExtension(file)));
+                                var dest = Path.Combine(parent, normalized + Path.GetExtension(file));
+                                if (!Path.GetFileName(file).Equals(Path.GetFileName(dest)))
+                                {
+                                    if (File.Exists(dest))
+                                    {
+                                        var dir = new DirectoryInfo(Path.Combine(parent, "_duplicated"));
+                                        if (!dir.Exists)
+                                            dir.Create();
+                                        var dupFile = Path.Combine(parent, "_duplicated", Path.GetFileName(file));
+                                        File.Move(file, dupFile);
+                                        Log.Warning("Destination file already exists: {src} -> {dst}. The file is moved to {dupFile}", file, dest, dupFile);
+                                        break;
+                                    }
+
+                                    File.Move(file, dest);
+                                    Log.Information("Normalized song file name: {src} -> {dst}", file, dest);
+                                }
+                                break;
+                            }
+                            case OperatingMode.S3RL_Name_Normalize:
+                            {
+                                var parent = Path.GetDirectoryName(file);
+                                if (parent == null)
+                                    throw new IOException("Parent directory empty: " + file);
+                                var normalized = SongFileName.GetNormalizedFileName(SongFileName.ParseFileName(Path.GetFileNameWithoutExtension(file), s3rl: true));
                                 var dest = Path.Combine(parent, normalized + Path.GetExtension(file));
                                 if (!Path.GetFileName(file).Equals(Path.GetFileName(dest)))
                                 {
